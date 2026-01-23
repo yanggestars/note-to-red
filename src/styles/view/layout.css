@@ -48,6 +48,10 @@
     overflow: hidden;
 }
 
+.red-image-preview.red-image-ratio-3-5 {
+    aspect-ratio: 3/5;
+}
+
 /* 内容区域容器 */
 .red-content-wrapper {
     flex: 1;

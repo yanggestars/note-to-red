@@ -82,8 +82,9 @@ export class RedSettingTab extends PluginSettingTab {
             .addDropdown(dropdown => dropdown
                 .addOption('h1', '一级标题(#) - 按大章节分割')
                 .addOption('h2', '二级标题(##) - 按小章节分割')
+                .addOption('h1-h2', '一级(#)/二级(##) - 同时分割')
                 .setValue(this.plugin.settingsManager.getSettings().headingLevel)
-                .onChange(async (value: 'h1' | 'h2') => {
+                .onChange(async (value: 'h1' | 'h2' | 'h1-h2') => {
                     await this.plugin.settingsManager.updateSettings({
                         headingLevel: value
                     });

@@ -1,6 +1,8 @@
 import { App } from 'obsidian';
 import RedPlugin from './main';
 
+type HeadingMode = 'h1' | 'h2' | 'h1-h2';
+
 export class RedConverter {
     private static app: App;
     private static plugin: RedPlugin;
@@ -10,25 +12,59 @@ export class RedConverter {
         this.plugin = plugin;
     }
 
-    static hasValidContent(element: HTMLElement): boolean {
+    private static getHeadingMode(): HeadingMode {
         const settings = this.plugin?.settingsManager?.getSettings();
-        const headingLevel = settings?.headingLevel || 'h1';
-        const headers = element.querySelectorAll(headingLevel);
+        return (settings?.headingLevel as HeadingMode) || 'h1';
+    }
+
+    private static getHeadingSelector(mode: HeadingMode): string {
+        return mode === 'h1-h2' ? 'h1, h2' : mode;
+    }
+
+    private static getHeadingStopTags(mode: HeadingMode): string[] {
+        return mode === 'h1-h2'
+            ? ['H1', 'H2']
+            : [mode.toUpperCase()];
+    }
+
+    private static getHeadingMessages(mode: HeadingMode) {
+        if (mode === 'h1') {
+            return {
+                selection: '一级标题(#)',
+                noun: '一级标题'
+            };
+        }
+        if (mode === 'h2') {
+            return {
+                selection: '二级标题(##)',
+                noun: '二级标题'
+            };
+        }
+        return {
+            selection: '一级标题(#)或二级标题(##)',
+            noun: '一级或二级标题'
+        };
+    }
+
+    static hasValidContent(element: HTMLElement): boolean {
+        const headingMode = this.getHeadingMode();
+        const headers = element.querySelectorAll(this.getHeadingSelector(headingMode));
         return headers.length > 0;
     }
 
     static formatContent(element: HTMLElement): void {
-        const settings = this.plugin?.settingsManager?.getSettings();
-        const headingLevel = settings?.headingLevel || 'h1';
-        const headers = Array.from(element.querySelectorAll(headingLevel));
+        const headingMode = this.getHeadingMode();
+        const headingSelector = this.getHeadingSelector(headingMode);
+        const headers = Array.from(element.querySelectorAll(headingSelector));
         
         if (headers.length === 0) {
+            const headingMessages = this.getHeadingMessages(headingMode);
             element.empty();
             const tip = element.createEl('div', {
                 cls: 'red-empty-message',
                 text: `⚠️ 温馨提示
-                        请使用${headingLevel === 'h1' ? '一级标题(#)' : '二级标题(##)'}来分割内容
-                        每个${headingLevel === 'h1' ? '一级标题' : '二级标题'}将生成一张独立的图片
+                        请使用${headingMessages.selection}来分割内容
+                        每个${headingMessages.noun}将生成一张独立的图片
                         现在编辑文档，实时预览效果`
             });
             // 触发自定义事件
@@ -77,7 +113,7 @@ export class RedConverter {
         const contentContainer = document.createElement('div');
         contentContainer.className = 'red-content-container';
         
-        // 处理每个二级标题及其内容
+        // 处理选中的标题及其内容
         headers.forEach((header, index) => {
             const section = this.createContentSection(header, index);
             if (section) {
@@ -105,14 +141,14 @@ export class RedConverter {
     }
 
         private static createContentSection(header: Element, index: number): HTMLElement | null {
-        const settings = this.plugin?.settingsManager?.getSettings();
-        const headingLevel = settings?.headingLevel || 'h1';
+        const headingMode = this.getHeadingMode();
+        const stopTags = this.getHeadingStopTags(headingMode);
         
         // 获取当前标题到下一个标题之间的所有内容
         let content: Element[] = [];
         let current = header.nextElementSibling;
         
-        while (current && current.tagName !== headingLevel.toUpperCase()) {
+        while (current && !stopTags.includes(current.tagName)) {
             content.push(current.cloneNode(true) as Element);
             current = current.nextElementSibling;
         }

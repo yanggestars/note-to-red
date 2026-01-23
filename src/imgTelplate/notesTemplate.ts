@@ -16,6 +16,7 @@ export class NotesTemplate implements ImgTemplate {
     ) { }
 
     render(element: HTMLElement) {
+        this.applyAspectRatio(element);
         const sections = element.querySelectorAll('.red-content-section');
         sections.forEach(() => {
             const header = element.querySelector('.red-preview-header');
@@ -48,6 +49,21 @@ export class NotesTemplate implements ImgTemplate {
                 footer.removeAttribute('class');
             }
         });
+    }
+
+    private applyAspectRatio(element: HTMLElement) {
+        const preview = element.querySelector('.red-image-preview');
+        if (!preview) {
+            return;
+        }
+
+        this.resetRatioClasses(preview);
+        preview.classList.add('red-image-ratio-3-5');
+    }
+
+    private resetRatioClasses(preview: Element) {
+        const ratioClasses = Array.from(preview.classList).filter(cls => cls.startsWith('red-image-ratio-'));
+        ratioClasses.forEach(cls => preview.classList.remove(cls));
     }
 
     private async handleTitleEdit(element: HTMLElement) {

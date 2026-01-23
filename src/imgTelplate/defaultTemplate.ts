@@ -17,6 +17,7 @@ export class DefaultTemplate implements ImgTemplate {
     ) {}
 
     render(element: HTMLElement) {
+        this.resetAspectRatio(element);
         const sections = element.querySelectorAll('.red-content-section');
         const settings = this.settingsManager.getSettings();
         
@@ -41,6 +42,15 @@ export class DefaultTemplate implements ImgTemplate {
                 }
             }
         });
+    }
+
+    private resetAspectRatio(element: HTMLElement) {
+        const preview = element.querySelector('.red-image-preview');
+        if (!preview) {
+            return;
+        }
+        const ratioClasses = Array.from(preview.classList).filter(cls => cls.startsWith('red-image-ratio-'));
+        ratioClasses.forEach(cls => preview.classList.remove(cls));
     }
 
     private createHeaderContent(headerArea: HTMLElement) {

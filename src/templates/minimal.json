@@ -21,9 +21,14 @@
             "separator": "color: #dddddd;"
         },
         "title": {
+            "h1": {
+                "base": "margin: 0; font-size: 1.65em; line-height: 1.4;",
+                "content": "font-weight: 600; color: #444444;",
+                "after": ""
+            },
             "h2": {
                 "base": "margin: 0; font-size: 1.5em; line-height: 1.5;",
-                "content": "font-weight: 600; color: #333333;",
+                "content": "font-weight: 600; color: #444444;",
                 "after": ""
             },
             "h3": {

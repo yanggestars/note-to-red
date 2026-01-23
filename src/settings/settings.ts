@@ -2,8 +2,6 @@ import { Theme } from '../themeManager';
 import  RedPlugin  from '../main';
 import { EventEmitter } from 'events';
 interface RedSettings {
-    donateCount?: number;
-    lastDonatePrompt?: number;
     templateId: string;
     themeId: string;
     fontFamily: string;
@@ -21,7 +19,7 @@ interface RedSettings {
     showFooter?: boolean;
     footerLeftText: string;
     footerRightText: string;
-    headingLevel: 'h1' | 'h2'; // 标题级别选项
+    headingLevel: 'h1' | 'h2' | 'h1-h2'; // 标题级别选项
     customFonts: { value: string; label: string; isPreset?: boolean }[];  // 添加自定义字体配置
     backgroundSettings: {
         imageUrl: string;
@@ -100,13 +98,26 @@ export class SettingsManager extends EventEmitter {
             savedData = {};
         }
     
-        // 如果是首次加载或 themes 为空，导入预设主题
+        const { templates } = await import('../templates');
+        const presetThemes = Object.values(templates).map(theme => ({
+            ...theme,
+            isPreset: true
+        }));
+
         if (!savedData.themes || savedData.themes.length === 0) {
-            const { templates } = await import('../templates');
-            savedData.themes = Object.values(templates).map(theme => ({
-                ...theme,
-                isPreset: true
-            }));
+            savedData.themes = presetThemes;
+        } else {
+            const savedThemes = savedData.themes as Theme[];
+            const storedThemes = new Map<string, Theme>(savedThemes.map((theme: Theme) => [theme.id, theme]));
+            presetThemes.forEach(theme => {
+                const existing = storedThemes.get(theme.id);
+                storedThemes.set(theme.id, {
+                    ...theme,
+                    isVisible: existing?.isVisible !== undefined ? existing.isVisible : theme.isVisible,
+                    isPreset: true
+                });
+            });
+            savedData.themes = Array.from(storedThemes.values());
         }
     
         // 确保 customThemes 存在
