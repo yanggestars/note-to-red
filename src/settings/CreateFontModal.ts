@@ -1,4 +1,4 @@
-import { App, Modal, Setting, setIcon } from 'obsidian';
+import { App, Modal, Setting, setIcon, Notice } from 'obsidian';
 
 export class CreateFontModal extends Modal {
     private font: { value: string; label: string; isPreset?: boolean };
@@ -44,14 +44,14 @@ export class CreateFontModal extends Modal {
             .setDesc('显示在下拉菜单中的名称')
             .addText(text => text
                 .setValue(this.font.label)
-                .onChange(value => this.font.label = value));
+                .onChange(value => this.font.label = value.trim()));
 
         new Setting(contentEl)
             .setName('字体值')
             .setDesc('CSS font-family 的值')
             .addText(text => text
                 .setValue(this.font.value)
-                .onChange(value => this.font.value = value))
+                .onChange(value => this.font.value = value.trim()))
 
         new Setting(contentEl)
             .addButton(btn => btn
@@ -59,6 +59,7 @@ export class CreateFontModal extends Modal {
                 .setCta()
                 .onClick(() => {
                     if (!this.font.label || !this.font.value) {
+                        new Notice('请填写完整的字体名称和字体值');
                         return;
                     }
                     this.onSubmit(this.font);

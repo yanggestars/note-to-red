@@ -46,6 +46,26 @@ export class RedSettingTab extends PluginSettingTab {
         return section;
     }
 
+    private createSubsection(containerEl: HTMLElement, title: string, renderContent: (contentEl: HTMLElement) => void) {
+        const section = containerEl.createDiv('red-settings-subsection');
+        const header = section.createDiv('red-settings-subsection-header');
+
+        const toggle = header.createSpan('red-settings-subsection-toggle');
+        setIcon(toggle, 'chevron-right');
+
+        header.createEl('h3', { text: title });
+        const content = section.createDiv('red-settings-subsection-content');
+        renderContent(content);
+
+        header.addEventListener('click', () => {
+            const isExpanded = !section.hasClass('is-expanded');
+            section.toggleClass('is-expanded', isExpanded);
+            setIcon(toggle, isExpanded ? 'chevron-down' : 'chevron-right');
+        });
+
+        return content;
+    }
+
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
@@ -58,168 +78,67 @@ export class RedSettingTab extends PluginSettingTab {
     }
 
     private renderBasicSettings(containerEl: HTMLElement): void {
-        // 排版管理区域
-        const typographySection = containerEl.createDiv('red-settings-subsection');
-        const typographyHeader = typographySection.createDiv('red-settings-subsection-header');
-        const typographyToggle = typographyHeader.createSpan('red-settings-subsection-toggle');
-        setIcon(typographyToggle, 'chevron-right');
-        
-        typographyHeader.createEl('h3', { text: '排版管理' });
-        
-        const typographyContent = typographySection.createDiv('red-settings-subsection-content');
-        
-        // 折叠/展开逻辑
-        typographyHeader.addEventListener('click', () => {
-            const isExpanded = !typographySection.hasClass('is-expanded');
-            typographySection.toggleClass('is-expanded', isExpanded);
-            setIcon(typographyToggle, isExpanded ? 'chevron-down' : 'chevron-right');
+        this.createSubsection(containerEl, '排版管理', (contentEl) => {
+            new Setting(contentEl)
+                .setName('内容分割标题级别')
+                .setDesc('选择用于分割内容生成图片的标题级别：')
+                .addDropdown(dropdown => dropdown
+                    .addOption('h1', '一级标题(#) - 按大章节分割')
+                    .addOption('h2', '二级标题(##) - 按小章节分割')
+                    .addOption('h1-h2', '一级(#)/二级(##) - 同时分割')
+                    .setValue(this.plugin.settingsManager.getSettings().headingLevel)
+                    .onChange(async (value: 'h1' | 'h2' | 'h1-h2') => {
+                        await this.plugin.settingsManager.updateSettings({ headingLevel: value });
+                        new Notice('标题级别设置已更新，请重启 Obsidian 或重新加载以使更改生效');
+                    }));
         });
 
-        // 内容分割标题级别设置
-        new Setting(typographyContent)
-            .setName('内容分割标题级别')
-            .setDesc('选择用于分割内容生成图片的标题级别：')
-            .addDropdown(dropdown => dropdown
-                .addOption('h1', '一级标题(#) - 按大章节分割')
-                .addOption('h2', '二级标题(##) - 按小章节分割')
-                .addOption('h1-h2', '一级(#)/二级(##) - 同时分割')
-                .setValue(this.plugin.settingsManager.getSettings().headingLevel)
-                .onChange(async (value: 'h1' | 'h2' | 'h1-h2') => {
-                    await this.plugin.settingsManager.updateSettings({
-                        headingLevel: value
-                    });
-                    new Notice('标题级别设置已更新，请重启 Obsidian 或重新加载以使更改生效');
-                })
-            );
+        this.createSubsection(containerEl, '字体管理', (contentEl) => {
+            const fontList = contentEl.createDiv('font-management');
+            this.renderFontList(fontList);
 
-        // 字体管理区域
-        const fontSection = containerEl.createDiv('red-settings-subsection');
-        const fontHeader = fontSection.createDiv('red-settings-subsection-header');
-        const fontToggle = fontHeader.createSpan('red-settings-subsection-toggle');
-        setIcon(fontToggle, 'chevron-right');
-        
-        fontHeader.createEl('h3', { text: '字体管理' });
-        
-        const fontContent = fontSection.createDiv('red-settings-subsection-content');
-        
-        // 折叠/展开逻辑
-        fontHeader.addEventListener('click', () => {
-            const isExpanded = !fontSection.hasClass('is-expanded');
-            fontSection.toggleClass('is-expanded', isExpanded);
-            setIcon(fontToggle, isExpanded ? 'chevron-down' : 'chevron-right');
+            new Setting(contentEl)
+                .addButton(btn => btn
+                    .setButtonText('+ 添加字体')
+                    .setCta()
+                    .onClick(() => {
+                        new CreateFontModal(
+                            this.app,
+                            async (newFont) => {
+                                await this.plugin.settingsManager.addCustomFont(newFont);
+                                this.display();
+                                new Notice('请重启 Obsidian 或重新加载以使更改生效');
+                            }
+                        ).open();
+                    }));
         });
-
-        // 字体列表
-        const fontList = fontContent.createDiv('font-management');
-        this.plugin.settingsManager.getFontOptions().forEach(font => {
-            const fontItem = fontList.createDiv('font-item');
-            const setting = new Setting(fontItem)
-                .setName(font.label)
-                .setDesc(font.value);
-
-            // 只为非预设字体添加编辑和删除按钮
-            if (!font.isPreset) {
-                setting
-                    .addExtraButton(btn => 
-                        btn.setIcon('pencil')
-                            .setTooltip('编辑')
-                            .onClick(() => {
-                                new CreateFontModal(
-                                    this.app,
-                                    async (updatedFont) => {
-                                        await this.plugin.settingsManager.updateFont(font.value, updatedFont);
-                                        this.display();
-                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                                    },
-                                    font
-                                ).open();
-                            }))
-                    .addExtraButton(btn => 
-                        btn.setIcon('trash')
-                            .setTooltip('删除')
-                            .onClick(() => {
-                                // 新增确认模态框
-                                new ConfirmModal(
-                                    this.app,
-                                    '确认删除字体',
-                                    `确定要删除「${font.label}」字体配置吗？`,
-                                    async () => {
-                                        await this.plugin.settingsManager.removeFont(font.value);
-                                        this.display();
-                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                                    }
-                                ).open();
-                            }));
-            }
-        });
-
-        // 添加新字体按钮
-        new Setting(fontContent)
-            .addButton(btn => btn
-                .setButtonText('+ 添加字体')
-                .setCta()
-                .onClick(() => {
-                    new CreateFontModal(
-                        this.app,
-                        async (newFont) => {
-                            await this.plugin.settingsManager.addCustomFont(newFont);
-                            this.display();
-                            new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                        }
-                    ).open();
-                }));
     }
 
     private renderThemeSettings(containerEl: HTMLElement): void {
-        // 主题显示设置部分
-        const themeVisibilitySection = containerEl.createDiv('red-settings-subsection');
-        const themeVisibilityHeader = themeVisibilitySection.createDiv('red-settings-subsection-header');
-        
-        const themeVisibilityToggle = themeVisibilityHeader.createSpan('red-settings-subsection-toggle');
-        setIcon(themeVisibilityToggle, 'chevron-right');
-        
-        themeVisibilityHeader.createEl('h3', { text: '显示设置' });
-        
-        const themeVisibilityContent = themeVisibilitySection.createDiv('red-settings-subsection-content');
-        
-        // 折叠/展开逻辑
-        themeVisibilityHeader.addEventListener('click', () => {
-            const isExpanded = !themeVisibilitySection.hasClass('is-expanded');
-            themeVisibilitySection.toggleClass('is-expanded', isExpanded);
-            setIcon(themeVisibilityToggle, isExpanded ? 'chevron-down' : 'chevron-right');
+        const themeVisibilityContent = this.createSubsection(containerEl, '显示设置', (contentEl) => {
+            new Setting(contentEl)
+                .setName('是否显示时间')
+                .setDesc('控制是否在主题中显示页眉时间')
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settingsManager.getSettings().showTime !== false)
+                    .onChange(async (value) => {
+                        await this.plugin.settingsManager.updateSettings({ showTime: value });
+                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
+                    }));
+
+            new Setting(contentEl)
+                .setName('是否显示页脚')
+                .setDesc('控制是否在主题中显示页脚部分')
+                .addToggle(toggle => toggle
+                    .setValue(this.plugin.settingsManager.getSettings().showFooter !== false)
+                    .onChange(async (value) => {
+                        await this.plugin.settingsManager.updateSettings({ showFooter: value });
+                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
+                    }));
+
+            contentEl.createEl('hr', { cls: 'red-settings-divider' });
         });
-        
-        // 添加页脚显示设置
-        new Setting(themeVisibilityContent)
-            .setName('是否显示时间')
-            .setDesc('控制是否在主题中显示页眉时间')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settingsManager.getSettings().showTime !== false)
-                .onChange(async (value) => {
-                    await this.plugin.settingsManager.updateSettings({
-                        showTime: value
-                    });
-                    new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                })
-            );
 
-        // 添加页脚显示设置
-        new Setting(themeVisibilityContent)
-            .setName('是否显示页脚')
-            .setDesc('控制是否在主题中显示页脚部分')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settingsManager.getSettings().showFooter !== false)
-                .onChange(async (value) => {
-                    await this.plugin.settingsManager.updateSettings({
-                        showFooter: value
-                    });
-                    new Notice('请重启 Obsidian 或重新加载以使更改生效');
-                })
-            );
-   
-        themeVisibilityContent.createEl('hr', { cls: 'red-settings-divider' });
-
-        // 主题选择容器
         const themeSelectionContainer = themeVisibilityContent.createDiv('theme-selection-container');
         
         // 左侧：所有主题列表
@@ -386,5 +305,47 @@ export class RedSettingTab extends PluginSettingTab {
                         }
                     ).open();
                 }));
+    }
+
+    private renderFontList(containerEl: HTMLElement) {
+        this.plugin.settingsManager.getFontOptions().forEach(font => {
+            const fontItem = containerEl.createDiv('font-item');
+            const setting = new Setting(fontItem)
+                .setName(font.label)
+                .setDesc(font.value);
+
+            if (!font.isPreset) {
+                setting
+                    .addExtraButton(btn =>
+                        btn.setIcon('pencil')
+                            .setTooltip('编辑')
+                            .onClick(() => {
+                                new CreateFontModal(
+                                    this.app,
+                                    async (updatedFont) => {
+                                        await this.plugin.settingsManager.updateFont(font.value, updatedFont);
+                                        this.display();
+                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
+                                    },
+                                    font
+                                ).open();
+                            }))
+                    .addExtraButton(btn =>
+                        btn.setIcon('trash')
+                            .setTooltip('删除')
+                            .onClick(() => {
+                                new ConfirmModal(
+                                    this.app,
+                                    '确认删除字体',
+                                    `确定要删除「${font.label}」字体配置吗？`,
+                                    async () => {
+                                        await this.plugin.settingsManager.removeFont(font.value);
+                                        this.display();
+                                        new Notice('请重启 Obsidian 或重新加载以使更改生效');
+                                    }
+                                ).open();
+                            }));
+            }
+        });
     }
 }

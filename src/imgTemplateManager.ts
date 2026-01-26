@@ -10,7 +10,7 @@ export interface ImgTemplate {
         content: true;
         footer?: boolean;
     };
-    render: (element: HTMLElement, settings: any) => void;
+    render: (element: HTMLElement, settings: unknown) => void;
 }
 
 export class ImgTemplateManager {
@@ -26,10 +26,7 @@ export class ImgTemplateManager {
     }
 
     private initializeTemplates() {
-        // 注册默认模板
         this.registerTemplate(new DefaultTemplate(this.settingsManager, this.onSettingsUpdate));
-
-        // 注册现代模板
         this.registerTemplate(new NotesTemplate(this.settingsManager, this.onSettingsUpdate));
     }
 
@@ -45,20 +42,31 @@ export class ImgTemplateManager {
     }
 
     setCurrentTemplate(id: string) {
-        const template = this.templates.find(t => t.id === id);
+        const template = this.getTemplateById(id);
         if (template) {
             this.currentTemplate = template;
         }
     }
 
     applyTemplate(previewEl: HTMLElement, settings: any) {
-        if (!this.currentTemplate) {
-            this.currentTemplate = this.templates[0];
+        const template = this.resolveTemplate();
+        if (!template) {
+            return;
         }
 
+        template.render(previewEl, settings);
+        this.themeManager.applyTheme(previewEl);
+    }
+
+    private getTemplateById(id: string) {
+        return this.templates.find(t => t.id === id) ?? null;
+    }
+
+    private resolveTemplate() {
         if (this.currentTemplate) {
-            this.currentTemplate.render(previewEl, settings);
-            this.themeManager.applyTheme(previewEl);
+            return this.currentTemplate;
         }
+        this.currentTemplate = this.templates[0] ?? null;
+        return this.currentTemplate;
     }
 }

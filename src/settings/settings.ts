@@ -1,131 +1,55 @@
-import { Theme } from '../themeManager';
-import  RedPlugin  from '../main';
+import RedPlugin from '../main';
 import { EventEmitter } from 'events';
-interface RedSettings {
-    templateId: string;
-    themeId: string;
-    fontFamily: string;
-    fontSize: number;
-    backgroundId: string;
-    themes: Theme[];      // 添加主题列表
-    customThemes: Theme[]; // 添加自定义主题列表
-    // 添加用户信息设置
-    userAvatar: string;
-    userName: string;
-    notesTitle: string;
-    userId: string;
-    showTime: boolean;
-    timeFormat: string;
-    showFooter?: boolean;
-    footerLeftText: string;
-    footerRightText: string;
-    headingLevel: 'h1' | 'h2' | 'h1-h2'; // 标题级别选项
-    customFonts: { value: string; label: string; isPreset?: boolean }[];  // 添加自定义字体配置
-    backgroundSettings: {
-        imageUrl: string;
-        scale: number;
-        position: { x: number; y: number };
-    };
-}
+import type { Theme } from '../types/theme';
+import { DEFAULT_SETTINGS, RedSettings, FontOption } from '../types/settings';
+import { loadPresetThemes, mergeThemes } from './themeLoader';
 
-export const DEFAULT_SETTINGS: RedSettings = {
-    templateId: 'default',
-    themeId: 'default',
-    fontFamily: 'Optima-Regular, Optima, PingFangSC-light, PingFangTC-light, "PingFang SC"',
-    fontSize: 16,
-    backgroundId: '',
-    themes: [],
-    customThemes: [],
-    // 修改默认用户信息
-    userAvatar: '',  // 默认为空，提示用户上传
-    userName: '夜半',
-    notesTitle: '备忘录',
-    userId: '@Yeban',
-    showTime: true,
-    timeFormat: 'zh-CN',
-    headingLevel: 'h2', // 默认使用二级标题
-    footerLeftText: '夜半过后，光明便启程',
-    footerRightText: '欢迎关注公众号：夜半',
-    customFonts: [
-        {
-            value: 'Optima-Regular, Optima, PingFangSC-light, PingFangTC-light, "PingFang SC", Cambria, Cochin, Georgia, Times, "Times New Roman", serif',
-            label: '默认字体',
-            isPreset: true
-        },
-        {
-            value: 'SimSun, "宋体", serif',
-            label: '宋体',
-            isPreset: true
-        },
-        {
-            value: 'SimHei, "黑体", sans-serif',
-            label: '黑体',
-            isPreset: true
-        },
-        {
-            value: 'KaiTi, "楷体", serif',
-            label: '楷体',
-            isPreset: true
-        },
-        {
-            value: '"Microsoft YaHei", "微软雅黑", sans-serif',
-            label: '雅黑',
-            isPreset: true
-        }
-    ],
-    backgroundSettings: {
-        imageUrl: '',
-        scale: 1,
-        position: { x: 0, y: 0 }
-    },
+/**
+ * Lightweight persistence wrapper that keeps I/O isolated from the manager logic.
+ */
+class SettingsStore {
+    constructor(private plugin: RedPlugin) {}
+
+    async load(): Promise<Partial<RedSettings>> {
+        const saved = await this.plugin.loadData();
+        return saved ?? {};
+    }
+
+    async save(settings: RedSettings) {
+        await this.plugin.saveData(settings);
+    }
 }
 
 export class SettingsManager extends EventEmitter {
-    private plugin: RedPlugin;
-    private settings: RedSettings;
+    private readonly store: SettingsStore;
+    private settings: RedSettings = DEFAULT_SETTINGS;
 
     constructor(plugin: RedPlugin) {
         super();
-        this.plugin = plugin;
-        this.settings = DEFAULT_SETTINGS;
+        this.store = new SettingsStore(plugin);
     }
 
+    /**
+     * Loads persisted data, merges it with defaults, and rehydrates preset themes.
+     */
     async loadSettings() {
-        let savedData = await this.plugin.loadData();
+        const savedData = await this.store.load();
+        const presetThemes = await loadPresetThemes();
+        const mergedThemes = mergeThemes(savedData.themes as Theme[] | undefined, presetThemes);
+        const customThemes = (savedData.customThemes ?? []).map(theme => ({ ...theme }));
+        const customFonts = (savedData.customFonts ?? DEFAULT_SETTINGS.customFonts).map(font => ({ ...font }));
 
-        // 确保 savedData 是一个对象
-        if (!savedData) {
-            savedData = {};
-        }
-    
-        const { templates } = await import('../templates');
-        const presetThemes = Object.values(templates).map(theme => ({
-            ...theme,
-            isPreset: true
-        }));
-
-        if (!savedData.themes || savedData.themes.length === 0) {
-            savedData.themes = presetThemes;
-        } else {
-            const savedThemes = savedData.themes as Theme[];
-            const storedThemes = new Map<string, Theme>(savedThemes.map((theme: Theme) => [theme.id, theme]));
-            presetThemes.forEach(theme => {
-                const existing = storedThemes.get(theme.id);
-                storedThemes.set(theme.id, {
-                    ...theme,
-                    isVisible: existing?.isVisible !== undefined ? existing.isVisible : theme.isVisible,
-                    isPreset: true
-                });
-            });
-            savedData.themes = Array.from(storedThemes.values());
-        }
-    
-        // 确保 customThemes 存在
-        if (!savedData.customThemes) {
-            savedData.customThemes = [];
-        }
-    
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, savedData);
+        this.settings = {
+            ...DEFAULT_SETTINGS,
+            ...savedData,
+            themes: mergedThemes,
+            customThemes,
+            customFonts,
+            backgroundSettings: {
+                ...DEFAULT_SETTINGS.backgroundSettings,
+                ...(savedData.backgroundSettings ?? {})
+            }
+        };
     }
 
     // 主题相关方法
@@ -147,7 +71,7 @@ export class SettingsManager extends EventEmitter {
         theme.isPreset = false;
         theme.isVisible = true;
         this.settings.customThemes.push(theme);
-        await this.saveSettings();
+        await this.persist();
         this.emit('theme-visibility-changed');
     }
 
@@ -159,7 +83,7 @@ export class SettingsManager extends EventEmitter {
                     ...this.settings.themes[presetThemeIndex],
                     isVisible: updatedTheme.isVisible
                 };
-                await this.saveSettings();
+                await this.persist();
                 this.emit('theme-visibility-changed');
                 return true;
             }
@@ -172,7 +96,7 @@ export class SettingsManager extends EventEmitter {
                 ...this.settings.customThemes[customThemeIndex],
                 ...updatedTheme
             };
-            await this.saveSettings();
+            await this.persist();
             this.emit('theme-visibility-changed');
             return true;
         }
@@ -187,15 +111,15 @@ export class SettingsManager extends EventEmitter {
             if (this.settings.themeId === themeId) {
                 this.settings.themeId = 'default';
             }
-            await this.saveSettings();
+            await this.persist();
             this.emit('theme-visibility-changed');
             return true;
         }
         return false;
     }
 
-    async saveSettings() {
-        await this.plugin.saveData(this.settings);
+    private async persist() {
+        await this.store.save(this.settings);
     }
 
     getSettings(): RedSettings {
@@ -204,23 +128,23 @@ export class SettingsManager extends EventEmitter {
 
     async updateSettings(settings: Partial<RedSettings>) {
         this.settings = { ...this.settings, ...settings };
-        await this.saveSettings();
+        await this.persist();
     }
 
-    getFontOptions() {
+    getFontOptions(): FontOption[] {
         return this.settings.customFonts;
     }
 
     async addCustomFont(font: { value: string; label: string }) {
         this.settings.customFonts.push({ ...font, isPreset: false });
-        await this.saveSettings();
+        await this.persist();
     }
 
     async removeFont(value: string) {
         const font = this.settings.customFonts.find(f => f.value === value);
         if (font && !font.isPreset) {
             this.settings.customFonts = this.settings.customFonts.filter(f => f.value !== value);
-            await this.saveSettings();
+            await this.persist();
         }
     }
 
@@ -228,7 +152,7 @@ export class SettingsManager extends EventEmitter {
         const index = this.settings.customFonts.findIndex(f => f.value === oldValue);
         if (index !== -1 && !this.settings.customFonts[index].isPreset) {
             this.settings.customFonts[index] = { ...newFont, isPreset: false };
-            await this.saveSettings();
+            await this.persist();
         }
     }
 }

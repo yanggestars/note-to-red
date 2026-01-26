@@ -1,64 +1,7 @@
-import * as htmlToImage from 'html-to-image';
 import JSZip from 'jszip';
+import { CaptureService } from './services/captureService';
 
 export class DownloadManager {
-    // 添加共用的导出配置方法
-    private static getExportConfig(imageElement: HTMLElement) {
-        return {
-            quality: 1,
-            pixelRatio: 4,
-            skipFonts: false,
-            // 添加过滤器，确保所有元素都被包含
-            filter: (node: Node) => {
-                return true;
-            },
-            // 处理图片加载错误
-            imagePlaceholder: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-        };
-    }
-
-    private static getZoomFactor(element: HTMLElement): number {
-        const rect = element.getBoundingClientRect();
-        const layoutWidth = element.offsetWidth || element.clientWidth || rect.width;
-        if (!layoutWidth) {
-            return 1;
-        }
-
-        const zoom = rect.width / layoutWidth;
-        return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
-    }
-
-    private static applyNotesHeaderScale(imageElement: HTMLElement): () => void {
-        const notesHeader = imageElement.querySelector('.red-notes-header') as HTMLElement | null;
-        if (!notesHeader) {
-            return () => {};
-        }
-
-        const zoomFactor = this.getZoomFactor(imageElement);
-        if (Math.abs(zoomFactor - 1) < 0.01) {
-            return () => {};
-        }
-
-        const previousScale = notesHeader.style.getPropertyValue('--red-notes-export-scale');
-        const hadScale = previousScale.length > 0;
-        const addedClass = !notesHeader.classList.contains('red-notes-exporting');
-
-        notesHeader.style.setProperty('--red-notes-export-scale', zoomFactor.toString());
-        notesHeader.classList.add('red-notes-exporting');
-
-        return () => {
-            if (!hadScale) {
-                notesHeader.style.removeProperty('--red-notes-export-scale');
-            } else {
-                notesHeader.style.setProperty('--red-notes-export-scale', previousScale);
-            }
-
-            if (addedClass) {
-                notesHeader.classList.remove('red-notes-exporting');
-            }
-        };
-    }
-
     static async downloadAllImages(element: HTMLElement): Promise<void> {
         try {
             const zip = new JSZip();
@@ -88,41 +31,12 @@ export class DownloadManager {
                 sections[i].classList.remove(HIDDEN_CLASS);
                 sections[i].classList.add(VISIBLE_CLASS);
 
-                // 确保浏览器完成重绘并等待资源加载
-                await new Promise(resolve => setTimeout(resolve, 300));
-
                 const imageElement = element.querySelector<HTMLElement>('.red-image-preview')!;
-                const resetHeaderScale = this.applyNotesHeaderScale(imageElement);
-
-                try {
-                    try {
-                        const blob = await htmlToImage.toBlob(imageElement, this.getExportConfig(imageElement));
-                        if (blob instanceof Blob) {
-                            zip.file(`小红书笔记_第${i + 1}页.png`, blob);
-                        } else {
-                            throw new Error('生成的不是有效的 Blob 对象');
-                        }
-                    } catch (err) {
-                        console.warn(`第${i + 1}页导出失败，尝试备用方法`, err);
-                        try {
-                            const canvas = await htmlToImage.toCanvas(imageElement, this.getExportConfig(imageElement));
-                            const blob = await new Promise<Blob>((resolve, reject) => {
-                                canvas.toBlob((b) => {
-                                    if (b) {
-                                        resolve(b);
-                                    } else {
-                                        reject(new Error('Canvas 转换为 Blob 失败'));
-                                    }
-                                }, 'image/png', 1);
-                            });
-                            zip.file(`小红书笔记_第${i + 1}页.png`, blob);
-                        } catch (canvasErr) {
-                            console.error(`第${i + 1}页备用导出也失败`, canvasErr);
-                        }
-                    }
-                } finally {
-                    resetHeaderScale();
-                }
+                await CaptureService.waitForStableRender();
+                await CaptureService.withHeaderScaling(imageElement, async () => {
+                    const blob = await CaptureService.createBlob(imageElement);
+                    zip.file(`小红书笔记_第${i + 1}页.png`, blob);
+                });
             }
 
             // 恢复原始类名状态
@@ -165,49 +79,19 @@ export class DownloadManager {
                 throw new Error('找不到预览区域');
             }
 
-            // 确保浏览器完成重绘并等待资源加载
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await CaptureService.waitForStableRender();
+            await CaptureService.withHeaderScaling(imageElement, async () => {
+                const blob = await CaptureService.createBlob(imageElement);
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `小红书笔记_${new Date().getTime()}.png`;
 
-            const resetHeaderScale = this.applyNotesHeaderScale(imageElement);
-
-            try {
-                try {
-                    // 使用 html-to-image 替代 dom-to-image
-                    const blob = await htmlToImage.toBlob(imageElement, this.getExportConfig(imageElement));
-
-                    // 创建下载链接并触发下载
-                    if (!blob) throw new Error('Blob 对象为空');
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `小红书笔记_${new Date().getTime()}.png`;
-
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                } catch (err) {
-                    console.warn('导出失败，尝试备用方法', err);
-                    // 备用方法：使用 toCanvas 然后转换为 blob
-                    const canvas = await htmlToImage.toCanvas(imageElement, this.getExportConfig(imageElement));
-                    canvas.toBlob((blob) => {
-                        if (!blob) {
-                            throw new Error('Canvas 转换为 Blob 失败');
-                        }
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `小红书笔记_${new Date().getTime()}.png`;
-
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                    }, 'image/png', 1);
-                }
-            } finally {
-                resetHeaderScale();
-            }
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            });
         } catch (error) {
             console.error('导出图片失败:', error);
             throw error;

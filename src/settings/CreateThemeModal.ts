@@ -1,5 +1,5 @@
 import { App, Modal, Setting, Notice, setIcon } from 'obsidian';
-import { Theme } from '../themeManager';
+import type { Theme } from '../types/theme';
 import { ThemePreviewModal } from './ThemePreviewModal';
 import RedPlugin from '../main';
 export class CreateThemeModal extends Modal {

@@ -1,11 +1,7 @@
 import { App, Modal, Setting } from 'obsidian';
 import { BackgroundManager } from '../backgroundManager';
+import type { BackgroundSettings } from '../types/settings';
 import { builtinBg1, builtinBg2, builtinBg3, builtinBg4, builtinBg5, builtinBg6 } from '../assets/backgrounds/builtinBackgrounds';
-export interface BackgroundSettings {
-    imageUrl: string;
-    scale: number;
-    position: { x: number; y: number };
-}
 
 export class BackgroundSettingModal extends Modal {
     private imageUrl: string = '';

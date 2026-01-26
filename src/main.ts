@@ -16,6 +16,10 @@ export default class RedPlugin extends Plugin {
 
     // 初始化主题管理器
     this.themeManager = new ThemeManager(this.app, this.settingsManager);
+    const initialSettings = this.settingsManager.getSettings();
+    this.themeManager.setCurrentTheme(initialSettings.themeId || 'default');
+    this.themeManager.setFont(initialSettings.fontFamily);
+    this.themeManager.setFontSize(initialSettings.fontSize);
 
     // 初始化转换器
     RedConverter.initialize(this.app, this);

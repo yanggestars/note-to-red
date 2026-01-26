@@ -3,6 +3,15 @@ import RedPlugin from './main';
 
 type HeadingMode = 'h1' | 'h2' | 'h1-h2';
 
+interface PreviewShell {
+    previewContainer: HTMLElement;
+    imagePreview: HTMLElement;
+    headerArea: HTMLElement;
+    contentArea: HTMLElement;
+    footerArea: HTMLElement;
+    copyButton: HTMLButtonElement;
+}
+
 export class RedConverter {
     private static app: App;
     private static plugin: RedPlugin;
@@ -54,52 +63,52 @@ export class RedConverter {
 
     static formatContent(element: HTMLElement): void {
         const headingMode = this.getHeadingMode();
-        const headingSelector = this.getHeadingSelector(headingMode);
-        const headers = Array.from(element.querySelectorAll(headingSelector));
-        
+        const headers = this.collectHeaders(element, headingMode);
+
         if (headers.length === 0) {
-            const headingMessages = this.getHeadingMessages(headingMode);
-            element.empty();
-            const tip = element.createEl('div', {
-                cls: 'red-empty-message',
-                text: `⚠️ 温馨提示
-                        请使用${headingMessages.selection}来分割内容
-                        每个${headingMessages.noun}将生成一张独立的图片
-                        现在编辑文档，实时预览效果`
-            });
-            // 触发自定义事件
-            element.dispatchEvent(new CustomEvent('content-validation-change', { 
-                detail: { isValid: false },
-                bubbles: true 
-            }));
+            this.emitValidationChange(element, false);
+            this.renderEmptyState(element, headingMode);
             return;
         }
 
-        // 触发自定义事件表示内容有效
-        element.dispatchEvent(new CustomEvent('content-validation-change', { 
-            detail: { isValid: true },
-            bubbles: true 
-        }));
+        this.emitValidationChange(element, true);
 
-        // 创建预览容器
+        const preview = this.createPreviewShell();
+        const contentContainer = this.buildContentContainer(headers, headingMode);
+        preview.contentArea.appendChild(contentContainer);
+        preview.imagePreview.appendChild(preview.headerArea);
+        preview.imagePreview.appendChild(preview.contentArea);
+        preview.imagePreview.appendChild(preview.footerArea);
+        preview.previewContainer.appendChild(preview.imagePreview);
+        this.replaceWithPreview(element, preview.previewContainer, preview.copyButton);
+    }
+
+    private static buildContentContainer(headers: Element[], headingMode: HeadingMode) {
+        const container = document.createElement('div');
+        container.className = 'red-content-container';
+        let hasActiveSection = false;
+
+        headers.forEach((header, index) => {
+            const sections = this.createSectionsForHeader(header, index, headingMode);
+            sections.forEach(section => {
+                if (!hasActiveSection) {
+                    section.classList.add('red-section-active');
+                    hasActiveSection = true;
+                }
+                container.appendChild(section);
+            });
+        });
+
+        return container;
+    }
+
+    private static createPreviewShell(): PreviewShell {
         const previewContainer = document.createElement('div');
         previewContainer.className = 'red-preview-container';
 
-        // 创建图片预览区域
         const imagePreview = document.createElement('div');
         imagePreview.className = 'red-image-preview';
-        
-        // 创建复制按钮
-        const copyButton = document.createElement('button');
-        copyButton.className = 'red-copy-button';
-        copyButton.innerHTML = '<?xml version="1.0" encoding="UTF-8"?><svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 12.4316V7.8125C13 6.2592 14.2592 5 15.8125 5H40.1875C41.7408 5 43 6.2592 43 7.8125V32.1875C43 33.7408 41.7408 35 40.1875 35H35.5163" stroke="#9b9b9b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M32.1875 13H7.8125C6.2592 13 5 14.2592 5 15.8125V40.1875C5 41.7408 6.2592 43 7.8125 43H32.1875C33.7408 43 35 41.7408 35 40.1875V15.8125C35 14.2592 33.7408 13 32.1875 13Z" fill="none" stroke="#9b9b9b" stroke-width="4" stroke-linejoin="round"/></svg>';
-        copyButton.title = '复制图片';
-        copyButton.setAttribute('aria-label', '复制图片到剪贴板');
-        
-        // 添加复制按钮到预览容器
-        previewContainer.appendChild(copyButton);
 
-        // 创建三个主要区域
         const headerArea = document.createElement('div');
         headerArea.className = 'red-preview-header';
 
@@ -109,39 +118,57 @@ export class RedConverter {
         const footerArea = document.createElement('div');
         footerArea.className = 'red-preview-footer';
 
-        // 创建内容容器
-        const contentContainer = document.createElement('div');
-        contentContainer.className = 'red-content-container';
-        
-        // 处理选中的标题及其内容
-        headers.forEach((header, index) => {
-            const section = this.createContentSection(header, index);
-            if (section) {
-                contentContainer.appendChild(section);
-            }
-        });
+        const copyButton = this.createCopyButton();
+        previewContainer.appendChild(copyButton);
 
-        // 组装结构
-        contentArea.appendChild(contentContainer);
-        imagePreview.appendChild(headerArea);
-        imagePreview.appendChild(contentArea);
-        imagePreview.appendChild(footerArea);
-        previewContainer.appendChild(imagePreview);
+        return { previewContainer, imagePreview, headerArea, contentArea, footerArea, copyButton };
+    }
 
-        // 处理完成后再清空原容器并添加新内容
+    private static createCopyButton(): HTMLButtonElement {
+        const copyButton = document.createElement('button');
+        copyButton.className = 'red-copy-button';
+        copyButton.innerHTML = '<?xml version="1.0" encoding="UTF-8"?><svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 12.4316V7.8125C13 6.2592 14.2592 5 15.8125 5H40.1875C41.7408 5 43 6.2592 43 7.8125V32.1875C43 33.7408 41.7408 35 40.1875 35H35.5163" stroke="#9b9b9b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M32.1875 13H7.8125C6.2592 13 5 14.2592 5 15.8125V40.1875C5 41.7408 6.2592 43 7.8125 43H32.1875C33.7408 43 35 41.7408 35 40.1875V15.8125C35 14.2592 33.7408 13 32.1875 13Z" fill="none" stroke="#9b9b9b" stroke-width="4" stroke-linejoin="round"/></svg>';
+        copyButton.title = '复制图片';
+        copyButton.setAttribute('aria-label', '复制图片到剪贴板');
+        return copyButton;
+    }
+
+    private static replaceWithPreview(element: HTMLElement, previewContainer: HTMLElement, copyButton: HTMLButtonElement) {
         element.empty();
         element.appendChild(previewContainer);
 
-        // 触发自定义事件，通知 view 添加复制按钮事件监听
-        const copyEvent = new CustomEvent('copy-button-added', { 
+        const copyEvent = new CustomEvent('copy-button-added', {
             detail: { copyButton },
-            bubbles: true 
+            bubbles: true
         });
         element.dispatchEvent(copyEvent);
     }
 
-        private static createContentSection(header: Element, index: number): HTMLElement | null {
-        const headingMode = this.getHeadingMode();
+    private static collectHeaders(element: HTMLElement, headingMode: HeadingMode): Element[] {
+        const headingSelector = this.getHeadingSelector(headingMode);
+        return Array.from(element.querySelectorAll(headingSelector));
+    }
+
+    private static emitValidationChange(element: HTMLElement, isValid: boolean) {
+        element.dispatchEvent(new CustomEvent('content-validation-change', {
+            detail: { isValid },
+            bubbles: true
+        }));
+    }
+
+    private static renderEmptyState(element: HTMLElement, headingMode: HeadingMode) {
+        const headingMessages = this.getHeadingMessages(headingMode);
+        element.empty();
+        element.createEl('div', {
+            cls: 'red-empty-message',
+            text: `⚠️ 温馨提示
+                        请使用${headingMessages.selection}来分割内容
+                        每个${headingMessages.noun}将生成一张独立的图片
+                        现在编辑文档，实时预览效果`
+        });
+    }
+
+    private static createSectionsForHeader(header: Element, index: number, headingMode: HeadingMode): HTMLElement[] {
         const stopTags = this.getHeadingStopTags(headingMode);
         
         // 获取当前标题到下一个标题之间的所有内容
@@ -172,50 +199,31 @@ export class RedConverter {
                 pages[currentPage].push(el);
             }
         });
-        
-        // 如果只有一个页面，按原来的方式处理
+        const sections: HTMLElement[] = [];
+
         if (pages.length === 1 && !content.some(el => el.tagName === 'HR')) {
-            // 创建内容区域
-            const section = document.createElement('section');
-            section.className = 'red-content-section';
-            section.setAttribute('data-index', index.toString());
-            
-            // 添加标题
-            section.appendChild(header.cloneNode(true));
-            
-            // 添加内容
-            content.forEach(el => section.appendChild(el));
-            
-            // 处理样式和格式
-            this.processElements(section);
-            
-            return section;
-        } else {
-            // 创建一个包含多个页面的片段
-            const fragment = document.createDocumentFragment();
-            
-            // 为每个页面创建一个部分
-            pages.forEach((pageContent, pageIndex) => {
-                if (pageContent.length === 0) return; // 跳过空页面
-                
-                const section = document.createElement('section');
-                section.className = 'red-content-section';
-                section.setAttribute('data-index', `${index}-${pageIndex}`);
-                
-                // 每个页面都添加标题
-                section.appendChild(header.cloneNode(true));
-                
-                // 添加页面内容
-                pageContent.forEach(el => section.appendChild(el));
-                
-                // 处理样式和格式
-                this.processElements(section);
-                
-                fragment.appendChild(section);
-            });
-            
-            return fragment as unknown as HTMLElement;
+            const section = this.createSection(header, index.toString(), content);
+            sections.push(section);
+            return sections;
         }
+
+        pages.forEach((pageContent, pageIndex) => {
+            if (pageContent.length === 0) return;
+            const section = this.createSection(header, `${index}-${pageIndex}`, pageContent);
+            sections.push(section);
+        });
+
+        return sections;
+    }
+
+    private static createSection(header: Element, index: string, content: Element[]): HTMLElement {
+        const section = document.createElement('section');
+        section.className = 'red-content-section';
+        section.setAttribute('data-index', index);
+        section.appendChild(header.cloneNode(true));
+        content.forEach(el => section.appendChild(el));
+        this.processElements(section);
+        return section;
     }
 
     private static processElements(container: HTMLElement | null): void {
